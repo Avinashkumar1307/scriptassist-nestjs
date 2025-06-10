@@ -1,76 +1,88 @@
-import { Injectable, CanActivate, ExecutionContext, HttpException, HttpStatus } from '@nestjs/common';
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  HttpException,
+  HttpStatus,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { Observable } from 'rxjs';
-
-// Inefficient in-memory storage for rate limiting
-// Problems:
-// 1. Not distributed - breaks in multi-instance deployments
-// 2. Memory leak - no cleanup mechanism for old entries
-// 3. No persistence - resets on application restart
-// 4. Inefficient data structure for lookups in large datasets
-const requestRecords: Record<string, { count: number, timestamp: number }[]> = {};
+import { RATE_LIMIT_KEY, RateLimitOptions } from '../decorators/rate-limit.decorator';
+import { Redis } from 'ioredis';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class RateLimitGuard implements CanActivate {
-  constructor(private reflector: Reflector) {}
+  private redis: Redis;
 
-  canActivate(
-    context: ExecutionContext,
-  ): boolean | Promise<boolean> | Observable<boolean> {
+  constructor(
+    private reflector: Reflector,
+    private configService: ConfigService,
+  ) {
+    const redisHost = this.configService.get<string>('bull.connection.host', 'localhost');
+    const redisPort = this.configService.get<number>('bull.connection.port', 6379);
+    this.redis = new Redis({ host: redisHost, port: redisPort });
+  }
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const options = this.reflector.get<RateLimitOptions>(RATE_LIMIT_KEY, context.getHandler());
+    if (!options) {
+      return true; // No rate limit applied
+    }
+
     const request = context.switchToHttp().getRequest();
     const ip = request.ip;
-    
-    // Inefficient: Uses IP address directly without any hashing or anonymization
-    // Security risk: Storing raw IPs without compliance consideration
-    return this.handleRateLimit(ip);
+    const { limit, windowMs } = options;
+
+    return this.handleRateLimit(ip, limit, windowMs);
   }
 
-  private handleRateLimit(ip: string): boolean {
+  private async handleRateLimit(ip: string, maxRequests: number, windowMs: number): Promise<boolean> {
+    const key = `rate-limit:${ip}`;
     const now = Date.now();
-    const windowMs = 60 * 1000; // 1 minute
-    const maxRequests = 100; // Max 100 requests per minute
-    
-    // Inefficient: Creates a new array for each IP if it doesn't exist
-    if (!requestRecords[ip]) {
-      requestRecords[ip] = [];
-    }
-    
-    // Inefficient: Filter operation on potentially large array
-    // Every request causes a full array scan
     const windowStart = now - windowMs;
-    requestRecords[ip] = requestRecords[ip].filter(record => record.timestamp > windowStart);
-    
-    // Check if rate limit is exceeded
-    if (requestRecords[ip].length >= maxRequests) {
-      // Inefficient error handling: Too verbose, exposes internal details
-      throw new HttpException({
-        status: HttpStatus.TOO_MANY_REQUESTS,
-        error: 'Rate limit exceeded',
-        message: `You have exceeded the ${maxRequests} requests per ${windowMs / 1000} seconds limit.`,
-        limit: maxRequests,
-        current: requestRecords[ip].length,
-        ip: ip, // Exposing the IP in the response is a security risk
-        remaining: 0,
-        nextValidRequestTime: requestRecords[ip][0].timestamp + windowMs,
-      }, HttpStatus.TOO_MANY_REQUESTS);
+
+    try {
+      // Use Redis pipeline for atomic operations
+      const pipeline = this.redis.pipeline();
+      pipeline.zremrangebyscore(key, 0, windowStart); // Remove old requests
+      pipeline.zcard(key); // Count requests in window
+      pipeline.zadd(key, now, now.toString()); // Add new request
+      pipeline.pexpire(key, windowMs); // Set expiration
+
+      const execResult = await pipeline.exec();
+      if (!execResult) {
+        // Redis connection issue, allow request to prevent blocking
+        console.error('Rate limit error: Redis pipeline.exec() returned null');
+        return true;
+      }
+      const [, count] = execResult;
+      const currentCount = count[1] as number;
+
+      if (currentCount > maxRequests) {
+        throw new HttpException(
+          {
+            status: HttpStatus.TOO_MANY_REQUESTS,
+            error: 'Rate limit exceeded',
+            message: `You have exceeded the ${maxRequests} requests in ${windowMs / 1000} seconds.`,
+            remaining: 0,
+          },
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
+
+      return true;
+    } catch (error:any) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      // Log error and allow request to prevent blocking on Redis failure
+      console.error(`Rate limit error: ${error.message}`);
+      return true;
     }
-    
-    // Inefficient: Potential race condition in concurrent environments
-    // No locking mechanism when updating shared state
-    requestRecords[ip].push({ count: 1, timestamp: now });
-    
-    // Inefficient: No periodic cleanup task, memory usage grows indefinitely
-    // Dead entries for inactive IPs are never removed
-    
-    return true;
+  }
+
+  // Cleanup on application shutdown
+  async onModuleDestroy() {
+    await this.redis.quit();
   }
 }
-
-// Decorator to apply rate limiting to controllers or routes
-export const RateLimit = (limit: number, windowMs: number) => {
-  // Inefficient: Decorator doesn't actually use the parameters
-  // This is misleading and causes confusion
-  return (target: any, key?: string, descriptor?: any) => {
-    return descriptor;
-  };
-}; 
