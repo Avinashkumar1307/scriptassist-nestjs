@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, InternalServerErrorException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  InternalServerErrorException,
+  Inject,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { Task } from './entities/task.entity';
@@ -9,6 +14,7 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { TaskStatus } from './enums/task-status.enum';
 import { TaskPriority } from './enums/task-priority.enum';
+import { CacheService } from '@common/services/cache.service';
 export interface Pagination<T> {
   data: T[];
   count: number;
@@ -24,11 +30,13 @@ export class TasksService {
     private tasksRepository: Repository<Task>,
     @InjectQueue('task-processing')
     private taskQueue: Queue,
+    @Inject('CACHE_SERVICE')
+    private readonly cacheService: CacheService,
   ) {}
 
   async create(createTaskDto: CreateTaskDto): Promise<Task> {
     console.log('Creating task with DTO:', createTaskDto);
-    return this.tasksRepository.manager.transaction(async (transactionalEntityManager) => {
+    return this.tasksRepository.manager.transaction(async transactionalEntityManager => {
       const task = this.tasksRepository.create(createTaskDto);
       const savedTask = await transactionalEntityManager.save(task);
 
@@ -60,7 +68,19 @@ export class TasksService {
       limit = 10,
     } = filter;
 
-    const query = this.tasksRepository.createQueryBuilder('task')
+    // Generate a unique cache key based on the filter parameters
+    const cacheKey = `tasks:${JSON.stringify(filter)}`;
+    console.log('Cache key for tasks:', cacheKey);
+    // Check if the results are already cached
+    const cachedResults = await this.cacheService.get<Pagination<Task>>(cacheKey);
+    console.log('Cached results:', cachedResults);
+    if (cachedResults) {
+      console.log('Returning cached results for tasks');
+      return cachedResults;
+    }
+    console.log('Returning NOT');
+    const query = this.tasksRepository
+      .createQueryBuilder('task')
       .leftJoinAndSelect('task.user', 'user');
 
     if (status) {
@@ -95,13 +115,18 @@ export class TasksService {
 
     const [data, total] = await query.getManyAndCount();
 
-    return {
+    const result = {
       data,
       count: total,
       page,
       limit,
       totalPages: Math.ceil(total / limit),
     };
+
+    // Cache the results with a TTL (Time To Live) of, for example, 60 seconds
+    await this.cacheService.set(cacheKey, result, 60);
+
+    return result;
   }
 
   async findOne(id: string): Promise<Task> {
@@ -116,7 +141,7 @@ export class TasksService {
   }
 
   async update(id: string, updateTaskDto: UpdateTaskDto): Promise<Task> {
-    return this.tasksRepository.manager.transaction(async (transactionalEntityManager) => {
+    return this.tasksRepository.manager.transaction(async transactionalEntityManager => {
       const task = await this.findOne(id);
       const originalStatus = task.status;
 
@@ -195,7 +220,7 @@ export class TasksService {
     action: string,
   ): Promise<Array<{ taskId: string; success: boolean; result?: any; error?: string }>> {
     const results: Array<{ taskId: string; success: boolean; result?: any; error?: string }> = [];
-console.log('Batch processing tasks:', taskIds, 'Action:', action);
+    console.log('Batch processing tasks:', taskIds, 'Action:', action);
     // Ensure taskIds is an array
     if (!Array.isArray(taskIds)) {
       throw new Error('taskIds must be an array');
@@ -203,10 +228,7 @@ console.log('Batch processing tasks:', taskIds, 'Action:', action);
 
     try {
       if (action === 'complete') {
-        await this.tasksRepository.update(
-          { id: In(taskIds) },
-          { status: TaskStatus.COMPLETED },
-        );
+        await this.tasksRepository.update({ id: In(taskIds) }, { status: TaskStatus.COMPLETED });
         for (const taskId of taskIds) {
           try {
             await this.taskQueue.add(

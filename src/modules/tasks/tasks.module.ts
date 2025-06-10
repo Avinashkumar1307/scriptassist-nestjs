@@ -5,6 +5,7 @@ import { BullModule } from '@nestjs/bullmq';
 import { TasksService } from './tasks.service';
 import { TasksController } from './tasks.controller';
 import { Task } from './entities/task.entity';
+// import { AppModule } from 'src/app.module';
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { Task } from './entities/task.entity';
     BullModule.registerQueue({
       name: 'task-processing',
     }),
+    // AppModule
   ],
   controllers: [TasksController],
   providers: [TasksService],
