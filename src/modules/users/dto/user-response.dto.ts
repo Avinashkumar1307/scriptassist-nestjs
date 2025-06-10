@@ -27,7 +27,15 @@ export class UserResponseDto {
   @ApiProperty({ example: '2023-01-01T00:00:00.000Z' })
   updatedAt: Date;
 
-  constructor(partial: Partial<UserResponseDto>) {
-    Object.assign(this, partial);
+  constructor(partial?: Partial<UserResponseDto>) {
+    if (!partial) return; // Skip assignment if partial is undefined or null
+    Object.assign(this, {
+      id: partial.id,
+      email: partial.email,
+      name: partial.name,
+      role: partial.role,
+      createdAt: partial.createdAt ? new Date(partial.createdAt) : undefined,
+      updatedAt: partial.updatedAt ? new Date(partial.updatedAt) : undefined,
+    });
   }
-} 
+}
