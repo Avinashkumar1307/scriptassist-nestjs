@@ -16,7 +16,14 @@ import { TasksService } from './tasks.service';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 // Assuming this exists for query params
-import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags, ApiResponse } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiQuery,
+  ApiTags,
+  ApiResponse,
+  ApiBody,
+} from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'; // Use the real JwtAuthGuard
 import { RateLimitGuard } from '../../common/guards/rate-limit.guard';
 import { RateLimit } from '../../common/decorators/rate-limit.decorator';
@@ -106,6 +113,23 @@ export class TasksController {
   @ApiOperation({ summary: 'Batch process multiple tasks' })
   @ApiResponse({ status: 200, description: 'Batch operation results' })
   @ApiResponse({ status: 400, description: 'Invalid action' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        tasks: {
+          type: 'array',
+          items: { type: 'string' },
+          example: ['660e8400-e29b-41d4-a716-446655440004'],
+        },
+        action: {
+          type: 'string',
+          example: 'complete',
+        },
+      },
+      required: ['tasks', 'action'],
+    },
+  })
   async batchProcess(@Body() operations: { tasks: string[]; action: string }) {
     const { tasks: taskIds, action } = operations;
     console.log('Batch processing tasks: Coo', taskIds, 'Action:', action);
