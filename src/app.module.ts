@@ -10,7 +10,8 @@ import { AuthModule } from './modules/auth/auth.module';
 import { TaskProcessorModule } from './queues/task-processor/task-processor.module';
 import { ScheduledTasksModule } from './queues/scheduled-tasks/scheduled-tasks.module';
 import { CacheService } from './common/services/cache.service';
-import configuration from '@config/configuration';
+import configuration from './config/configuration';
+
 
 @Global()
 @Module({

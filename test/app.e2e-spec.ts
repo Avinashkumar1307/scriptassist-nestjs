@@ -5,7 +5,7 @@ import { AppModule } from '../src/app.module';
 
 jest.setTimeout(600000);
 
-describe('AppController (e2e)', () => {
+describe('AuthController (e2e)', () => {
   let app: INestApplication;
 
   beforeEach(async () => {
@@ -15,7 +15,6 @@ describe('AppController (e2e)', () => {
 
     app = moduleFixture.createNestApplication();
 
-    // Apply the same pipes used in the main application
     app.useGlobalPipes(
       new ValidationPipe({
         whitelist: true,
@@ -34,9 +33,89 @@ describe('AppController (e2e)', () => {
     await app.close();
   });
 
-  it('/ (GET) - should be protected', () => {
-    return request(app.getHttpServer()).get('/').expect(401);
+  describe('/auth/login (POST)', () => {
+    it('should authenticate a user with valid credentials', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({
+          email: 'john.doe@example.com',
+          password: 'Password123!',
+        });
+
+      expect(response.status).toBe(201);
+      expect(response.body).toHaveProperty('accessToken');
+    });
+
+    it('should fail to authenticate with incorrect password', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({
+          email: 'john.doe@example.com',
+          password: 'WrongPassword123!',
+        });
+
+      expect(response.status).toBe(401);
+    });
+
+    it('should fail to authenticate with non-existent email', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({
+          email: 'nonexistent@example.com',
+          password: 'Password123!',
+        });
+
+      expect(response.status).toBe(401);
+    });
+
+    it('should validate request body', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({
+          email: 'invalid-email',
+          password: 'short',
+        });
+
+      expect(response.status).toBe(400);
+    });
   });
 
-  // Add more tests as needed
+  describe('/auth/register (POST)', () => {
+    it('should register a new user', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/auth/register')
+        .send({
+          name: 'Jane Doe',
+          email: 'jane.doe@example.com',
+          password: 'Password123!',
+        });
+
+      expect(response.status).toBe(201);
+      expect(response.body).toHaveProperty('accessToken');
+    });
+
+    it('should fail to register with an existing email', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/auth/register')
+        .send({
+          name: 'John Doe',
+          email: 'john.doe@example.com', // Assuming this email is already registered
+          password: 'Password123!',
+        });
+
+      expect(response.status).toBe(409); // Conflict
+    });
+
+    it('should validate request body for registration', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/auth/register')
+        .send({
+          name: 'Jane Doe',
+          email: 'invalid-email',
+          password: 'short',
+        });
+
+      expect(response.status).toBe(400);
+    });
+  });
 });

@@ -14,7 +14,9 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { TaskStatus } from './enums/task-status.enum';
 import { TaskPriority } from './enums/task-priority.enum';
-import { CacheService } from '@common/services/cache.service';
+import { CacheService } from '../../common/services/cache.service';
+
+
 export interface Pagination<T> {
   data: T[];
   count: number;
