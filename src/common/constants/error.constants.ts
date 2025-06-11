@@ -5,13 +5,14 @@ export const ERROR_MESSAGES = {
     ACCOUNT_INACTIVE: 'Your account is inactive. Please contact support.',
     EMAIL_EXISTS: 'Email already registered',
     REGISTRATION_FAILED: 'Registration failed. Please try again.',
-    WEAK_PASSWORD: 'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, one number, and one special character (@$!%*?&)',
+    WEAK_PASSWORD:
+      'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, one number, and one special character (@$!%*?&)',
     USER_NOT_FOUND: 'User not found',
     INSUFFICIENT_PERMISSIONS: 'You do not have sufficient permissions',
     TOKEN_GENERATION_FAILED: 'Failed to generate authentication token',
     VALIDATION_FAILED: 'User validation failed',
     ROLE_VALIDATION_FAILED: 'Role validation failed',
-    LOGIN_FAILED: 'Login failed. Please try again.'
+    LOGIN_FAILED: 'Login failed. Please try again.',
   },
   TASKS: {
     NOT_FOUND: (id: string) => `Task with ID ${id} not found`,
@@ -27,5 +28,15 @@ export const ERROR_MESSAGES = {
     EMPTY_BATCH: 'No task IDs provided for batch operation',
     INVALID_ACTION: (action: string) => `Invalid batch action: ${action}`,
     BATCH_FAILED: 'Batch operation failed',
+  },
+  USER: {
+    NOT_FOUND: (id: string) => `User with ID ${id} not found`,
+    EMAIL_EXISTS: 'Email already in use',
+    CREATE_FAILED: 'Failed to create user',
+    FETCH_ALL_FAILED: 'Failed to fetch users',
+    FETCH_FAILED: 'Failed to fetch user',
+    UPDATE_FAILED: 'Failed to update user',
+    DELETE_FAILED: 'Failed to delete user',
+    EMAIL_REQUIRED: 'Email is required',
   },
 };

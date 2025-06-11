@@ -24,9 +24,6 @@ import { PaginationDto } from './dto/response.filtered.data.dto';
 import { BatchProcessResultDto } from './dto/response-batch-process-result.dto';
 
 
-
-
-
 @Injectable()
 export class TasksService {
   private readonly logger = new Logger(TasksService.name);
