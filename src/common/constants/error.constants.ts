@@ -13,4 +13,19 @@ export const ERROR_MESSAGES = {
     ROLE_VALIDATION_FAILED: 'Role validation failed',
     LOGIN_FAILED: 'Login failed. Please try again.'
   },
+  TASKS: {
+    NOT_FOUND: (id: string) => `Task with ID ${id} not found`,
+    CREATE_FAILED: 'Failed to create task',
+    FETCH_FAILED: 'Failed to fetch tasks',
+    UPDATE_FAILED: 'Failed to update task',
+    DELETE_FAILED: 'Failed to delete task',
+    QUEUE_ERROR: 'Failed to queue task operation',
+    CONFLICT: 'Task conflict detected',
+    INVALID_PAGINATION: 'Invalid pagination parameters',
+    STATS_FAILED: 'Failed to fetch task statistics',
+    INVALID_BATCH_INPUT: 'Task IDs must be provided as an array',
+    EMPTY_BATCH: 'No task IDs provided for batch operation',
+    INVALID_ACTION: (action: string) => `Invalid batch action: ${action}`,
+    BATCH_FAILED: 'Batch operation failed',
+  },
 };

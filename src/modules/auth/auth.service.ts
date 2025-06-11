@@ -183,7 +183,6 @@ export class AuthService {
   async validateUserRoles(userId: string, requiredRoles: string[]): Promise<boolean> {
     try {
       const user = await this.validateUser(userId);
-
       if (!requiredRoles.includes(user.role)) {
         throw new ForbiddenException(ERROR_MESSAGES.AUTH.INSUFFICIENT_PERMISSIONS);
       }

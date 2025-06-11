@@ -31,13 +31,9 @@ import { TaskStatus } from './enums/task-status.enum';
 import { TaskPriority } from './enums/task-priority.enum';
 import { Task } from './entities/task.entity';
 import { TaskFilterDto } from './dto/task-filter.dto';
-export interface Pagination<T> {
-  data: T[];
-  count: number;
-  page: number;
-  limit: number;
-  totalPages: number;
-}
+import {TaskStatsDto} from './dto/response-stats.dto';
+import { PaginationDto } from './dto/response.filtered.data.dto';
+import {BatchProcessResultDto} from './dto/response-batch-process-result.dto'; 
 @ApiTags('tasks')
 @Controller('tasks')
 @UseGuards(JwtAuthGuard, RateLimitGuard)
@@ -60,7 +56,7 @@ export class TasksController {
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiResponse({ status: 200, description: 'List of tasks with pagination metadata' })
-  async findAll(@Query() query: TaskFilterDto): Promise<Pagination<Task>> {
+  async findAll(@Query() query: TaskFilterDto): Promise<PaginationDto<Task>> {
     const { status, priority, page = 1, limit = 10 } = query;
     return this.tasksService.findAll({ status, priority, page, limit });
   }
@@ -68,7 +64,7 @@ export class TasksController {
   @Get('stats')
   @ApiOperation({ summary: 'Get task statistics' })
   @ApiResponse({ status: 200, description: 'Task statistics' })
-  async getStats() {
+  async getStats(): Promise<TaskStatsDto> {
     return this.tasksService.getStats();
   }
 
@@ -130,7 +126,7 @@ export class TasksController {
       required: ['tasks', 'action'],
     },
   })
-  async batchProcess(@Body() operations: { tasks: string[]; action: string }) {
+  async batchProcess(@Body() operations: { tasks: string[]; action: string }): Promise<BatchProcessResultDto[]> {
     const { tasks: taskIds, action } = operations;
     console.log('Batch processing tasks: Coo', taskIds, 'Action:', action);
     return this.tasksService.batchProcess(taskIds, action);
