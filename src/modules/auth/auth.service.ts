@@ -108,7 +108,7 @@ export class AuthService {
         password: hashedPassword,
       });
 
-      const token = this.generateToken(user.id);
+      const token = this.generateToken(user.id,user.role);
 
       return {
         user: {
@@ -142,9 +142,9 @@ export class AuthService {
     }
   }
 
-  private generateToken(userId: string): string {
+  private generateToken(userId: string,role:string): string {
     try {
-      const payload = { sub: userId };
+      const payload = { sub: userId ,role};
       return this.jwtService.sign(payload, {
         expiresIn: '1d',
       });
