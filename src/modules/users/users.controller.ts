@@ -9,7 +9,6 @@ import {
   UseGuards,
   ClassSerializerInterceptor,
   UseInterceptors,
-  Request,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -33,7 +32,7 @@ export class UsersController {
   @UseGuards(JwtAuthGuard, AdminGuard)
   @ApiBearerAuth()
   @Get()
-  findAll(@Request() req: any) {
+  findAll() {
     return this.usersService.findAll();
   }
 

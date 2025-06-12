@@ -34,6 +34,7 @@ import { TaskFilterDto } from './dto/task-filter.dto';
 import {TaskStatsDto} from './dto/response-stats.dto';
 import { PaginationDto } from './dto/response.filtered.data.dto';
 import {BatchProcessResultDto} from './dto/response-batch-process-result.dto'; 
+import { AdminGuard } from '@common/guards/admin.guard';
 @ApiTags('tasks')
 @Controller('tasks')
 @UseGuards(JwtAuthGuard, RateLimitGuard)
@@ -50,6 +51,7 @@ export class TasksController {
   }
 
   @Get()
+  @UseGuards(AdminGuard)
   @ApiOperation({ summary: 'Find all tasks with optional filtering and pagination' })
   @ApiQuery({ name: 'status', required: false, enum: TaskStatus })
   @ApiQuery({ name: 'priority', required: false, enum: TaskPriority })
@@ -62,6 +64,7 @@ export class TasksController {
   }
 
   @Get('stats')
+  @UseGuards(AdminGuard)
   @ApiOperation({ summary: 'Get task statistics' })
   @ApiResponse({ status: 200, description: 'Task statistics' })
   async getStats(): Promise<TaskStatsDto> {
@@ -72,6 +75,7 @@ export class TasksController {
   @ApiOperation({ summary: 'Find a task by ID' })
   @ApiResponse({ status: 200, description: 'Task details' })
   @ApiResponse({ status: 404, description: 'Task not found' })
+  
   async findOne(@Param('id') id: string) {
     const task = await this.tasksService.findOne(id);
     if (!task) {
