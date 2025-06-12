@@ -9,7 +9,6 @@ import {
   UseGuards,
   ClassSerializerInterceptor,
   UseInterceptors,
-  ForbiddenException,
   Request,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
@@ -17,6 +16,8 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { UserGuard } from '@common/guards/user.guard';
+import { AdminGuard } from '@common/guards/admin.guard';
 
 @ApiTags('users')
 @Controller('users')
@@ -29,53 +30,31 @@ export class UsersController {
     return this.usersService.create(createUserDto);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, AdminGuard)
   @ApiBearerAuth()
   @Get()
   findAll(@Request() req: any) {
-    const role = req.user.role;
-    if (role !== 'admin') {
-      throw new ForbiddenException('Admin access required to view all users');
-    }
     return this.usersService.findAll();
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, UserGuard)
   @ApiBearerAuth()
   @Get(':id')
-  findOne(@Request() req: any, @Param('id') id: string) {
-    const userId = req.user.id;
-    const role = req.user.role;
-    if (role === 'admin' || userId === id) {
-      return this.usersService.remove(id);
-    }
-    throw new ForbiddenException('You do not have permission to view this user');
+  findOne(@Param('id') id: string) {
+    return this.usersService.findOne(id);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, UserGuard)
   @ApiBearerAuth()
   @Patch(':id')
-  update(@Request() req: any, @Param('id') id: string, @Body() updateUserDto: UpdateUserDto) {
-    const userId = req.user.id;
-    if (userId !== id) {
-      throw new ForbiddenException('You can only update your own profile');
-    }
+  update(@Param('id') id: string, @Body() updateUserDto: UpdateUserDto) {
     return this.usersService.update(id, updateUserDto);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, UserGuard)
   @ApiBearerAuth()
   @Delete(':id')
-  remove(@Request() req: any, @Param('id') id: string) {
-    const userId = req.user.id;
-    const role = req.user.role;
-    
-    // Admins can delete any user
-    if (role === 'admin' || userId === id) {
-      return this.usersService.remove(id);
-    }
-
-    // Otherwise, forbid
-    throw new ForbiddenException('You do not have permission to delete this user');
+  remove(@Param('id') id: string) {
+    return this.usersService.remove(id);
   }
 }

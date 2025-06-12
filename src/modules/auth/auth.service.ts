@@ -101,14 +101,11 @@ export class AuthService {
         throw new ConflictException(ERROR_MESSAGES.AUTH.EMAIL_EXISTS);
       }
 
-      const hashedPassword = await bcrypt.hash(registerDto.password, 10);
-
       const user = await this.usersService.create({
         ...registerDto,
-        password: hashedPassword,
       });
 
-      const token = this.generateToken(user.id,user.role);
+      const token = this.generateToken(user.id, user.role);
 
       return {
         user: {
@@ -142,9 +139,9 @@ export class AuthService {
     }
   }
 
-  private generateToken(userId: string,role:string): string {
+  private generateToken(userId: string, role: string): string {
     try {
-      const payload = { sub: userId ,role};
+      const payload = { sub: userId, role };
       return this.jwtService.sign(payload, {
         expiresIn: '1d',
       });
