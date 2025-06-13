@@ -5,6 +5,7 @@ import {
   Inject,
   BadRequestException,
   ConflictException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
@@ -19,10 +20,9 @@ import { TaskPriority } from './enums/task-priority.enum';
 import { CacheService } from '../../common/services/cache.service';
 import { ERROR_MESSAGES } from '../../common/constants/error.constants';
 import { Logger } from '@nestjs/common';
-import {TaskStatsDto} from './dto/response-stats.dto';
+import { TaskStatsDto } from './dto/response-stats.dto';
 import { PaginationDto } from './dto/response.filtered.data.dto';
 import { BatchProcessResultDto } from './dto/response-batch-process-result.dto';
-
 
 @Injectable()
 export class TasksService {
@@ -45,7 +45,10 @@ export class TasksService {
         { attempts: 3, backoff: { type: 'exponential', delay: 1000 } },
       );
     } catch (error) {
-      this.logger.error(`Failed to queue task ${taskId} status update`, error instanceof Error ? error.stack : '');
+      this.logger.error(
+        `Failed to queue task ${taskId} status update`,
+        error instanceof Error ? error.stack : '',
+      );
       throw new InternalServerErrorException(ERROR_MESSAGES.TASKS.QUEUE_ERROR);
     }
   }
@@ -55,11 +58,34 @@ export class TasksService {
       where: { id },
       relations: ['user'],
     });
-    
+
     if (!task) {
       throw new NotFoundException(ERROR_MESSAGES.TASKS.NOT_FOUND(id));
     }
     return task;
+  }
+
+  async create(createTaskDto: CreateTaskDto): Promise<Task> {
+    try {
+      this.logger.log(`Creating task: ${createTaskDto.title}`);
+
+      return await this.tasksRepository.manager.transaction(async transactionalEntityManager => {
+        const task = this.tasksRepository.create(createTaskDto);
+        const savedTask = await transactionalEntityManager.save(task);
+
+        await this.handleTaskQueue(savedTask.id, savedTask.status);
+        return savedTask;
+      });
+    } catch (error) {
+      this.logError(error, 'create');
+
+      if (error instanceof InternalServerErrorException) throw error;
+      if (error instanceof Error && 'code' in error && error.code === '23505') {
+        throw new ConflictException(ERROR_MESSAGES.TASKS.CONFLICT);
+      }
+
+      throw new InternalServerErrorException(ERROR_MESSAGES.TASKS.CREATE_FAILED);
+    }
   }
 
   private buildTaskQuery(filter: TaskFilterDto) {
@@ -76,70 +102,88 @@ export class TasksService {
       limit = 10,
     } = filter;
 
+    // Debug: log the received filter
+    console.log('Received in buildTaskQuery:', filter);
+
     const query = this.tasksRepository
       .createQueryBuilder('task')
       .leftJoinAndSelect('task.user', 'user');
 
-    if (status) query.andWhere('task.status = :status', { status });
-    if (priority) query.andWhere('task.priority = :priority', { priority });
-    if (userId) query.andWhere('task.userId = :userId', { userId });
+    // Status filter
+    if (status) {
+      query.andWhere('task.status = :status', { status });
+    }
+
+    // Priority filter
+    if (priority) {
+      query.andWhere('task.priority = :priority', { priority });
+    }
+
+    // User filter - IMPORTANT: use the correct field name
+    if (userId) {
+      query.andWhere('task.userId = :userId', { userId });
+      console.log('Applying userId filter:', userId); // Debug log
+    }
+
+    // Search filter
     if (search) {
-      query.andWhere('task.title ILIKE :search OR task.description ILIKE :search', {
+      query.andWhere('(task.title ILIKE :search OR task.description ILIKE :search)', {
         search: `%${search}%`,
       });
     }
-    if (createdAfter) query.andWhere('task.createdAt >= :createdAfter', { createdAfter });
-    if (createdBefore) query.andWhere('task.createdAt <= :createdBefore', { createdBefore });
-    if (dueAfter) query.andWhere('task.dueDate >= :dueAfter', { dueAfter });
-    if (dueBefore) query.andWhere('task.dueDate <= :dueBefore', { dueBefore });
+
+    // Date filters
+    if (createdAfter) {
+      const date = new Date(createdAfter);
+      query.andWhere('task.createdAt >= :createdAfter', { createdAfter: date });
+    }
+
+    if (createdBefore) {
+      const date = new Date(createdBefore);
+      query.andWhere('task.createdAt <= :createdBefore', { createdBefore: date });
+    }
+
+    if (dueAfter) {
+      const date = new Date(dueAfter);
+      query.andWhere('task.dueDate >= :dueAfter', { dueAfter: date });
+    }
+
+    if (dueBefore) {
+      const date = new Date(dueBefore);
+      query.andWhere('task.dueDate <= :dueBefore', { dueBefore: date });
+    }
+
+    // Default ordering
+    query.orderBy('task.createdAt', 'DESC');
 
     return { query, page, limit };
   }
 
-  async create(createTaskDto: CreateTaskDto): Promise<Task> {
-    try {
-      this.logger.log(`Creating task: ${createTaskDto.title}`);
-      
-      return await this.tasksRepository.manager.transaction(async transactionalEntityManager => {
-        const task = this.tasksRepository.create(createTaskDto);
-        const savedTask = await transactionalEntityManager.save(task);
-        
-        await this.handleTaskQueue(savedTask.id, savedTask.status);
-        return savedTask;
-      });
-    } catch (error) {
-      this.logError(error, 'create');
-      
-      if (error instanceof InternalServerErrorException) throw error;
-      if (error instanceof Error && 'code' in error && error.code === '23505') {
-        throw new ConflictException(ERROR_MESSAGES.TASKS.CONFLICT);
-      }
-      
-      throw new InternalServerErrorException(ERROR_MESSAGES.TASKS.CREATE_FAILED);
-    }
-  }
-
   async findAll(filter: TaskFilterDto): Promise<PaginationDto<Task>> {
     try {
+      // Validate pagination parameters
       const pagegiven = filter.page ?? 1;
       const limitgiven = filter.limit ?? 10;
+
       if (pagegiven < 1 || limitgiven < 1) {
         throw new BadRequestException(ERROR_MESSAGES.TASKS.INVALID_PAGINATION);
       }
 
+      // Check cache first
       const cacheKey = `tasks:${JSON.stringify(filter)}`;
       const cachedResults = await this.cacheService.get<PaginationDto<Task>>(cacheKey);
-      if (cachedResults) return cachedResults;
+      if (cachedResults) {
+        return cachedResults;
+      }
 
+      // Build and execute query
       const { query, page, limit } = this.buildTaskQuery(filter);
       const skip = (page - 1) * limit;
-      
-      const [data, total] = await query
-        .skip(skip)
-        .take(limit)
-        .getManyAndCount();
+      console.log(`Fetching tasks for page ${query} with limit ${limit}...`);
+      const [data, total] = await query.skip(skip).take(limit).getManyAndCount();
 
-      const result = {
+      // Prepare result
+      const result: PaginationDto<Task> = {
         data,
         count: total,
         page,
@@ -147,18 +191,29 @@ export class TasksService {
         totalPages: Math.ceil(total / limit),
       };
 
+      // Cache the result
       await this.cacheService.set(cacheKey, result, 60);
+
       return result;
     } catch (error) {
       this.logError(error, 'findAll');
-      if (error instanceof BadRequestException) throw error;
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
       throw new InternalServerErrorException(ERROR_MESSAGES.TASKS.FETCH_FAILED);
     }
   }
 
-  async findOne(id: string): Promise<Task> {
+  async findOne(id: string, user: any): Promise<Task> {
     try {
-      return await this.validateTaskExists(id);
+      const task = await this.validateTaskExists(id);
+      if (!task) throw new NotFoundException(ERROR_MESSAGES.TASKS.NOT_FOUND);
+
+      const canAccessTask = user.role === 'admin' || task.userId === user.id;
+      if (!canAccessTask) {
+        throw new UnauthorizedException('You cannot access this task');
+      }
+      return task;
     } catch (error) {
       this.logError(error, `findOne(${id})`);
       if (error instanceof NotFoundException) throw error;
@@ -166,10 +221,15 @@ export class TasksService {
     }
   }
 
-  async update(id: string, updateTaskDto: UpdateTaskDto): Promise<Task> {
+  async update(id: string, updateTaskDto: UpdateTaskDto, user: any): Promise<Task> {
     try {
       return await this.tasksRepository.manager.transaction(async transactionalEntityManager => {
         const task = await this.validateTaskExists(id);
+        if (!task) throw new NotFoundException(ERROR_MESSAGES.TASKS.NOT_FOUND);
+        const canAccessTask = user.role === 'admin' || task.userId === user.id;
+        if (!canAccessTask) {
+          throw new UnauthorizedException('You cannot update this task');
+        }
         const originalStatus = task.status;
 
         Object.assign(task, updateTaskDto);
@@ -183,21 +243,26 @@ export class TasksService {
       });
     } catch (error) {
       this.logError(error, `update(${id})`);
-      
-      if (error instanceof NotFoundException || 
-          error instanceof InternalServerErrorException) throw error;
-          
+
+      if (error instanceof NotFoundException || error instanceof InternalServerErrorException)
+        throw error;
+
       if (error instanceof Error && 'code' in error && error.code === '23505') {
         throw new ConflictException(ERROR_MESSAGES.TASKS.CONFLICT);
       }
-      
+
       throw new InternalServerErrorException(ERROR_MESSAGES.TASKS.UPDATE_FAILED);
     }
   }
 
-  async remove(id: string): Promise<void> {
+  async remove(id: string, user: any): Promise<void> {
     try {
       const task = await this.validateTaskExists(id);
+      if (!task) throw new NotFoundException(ERROR_MESSAGES.TASKS.NOT_FOUND);
+      const canAccessTask = user.role === 'admin' || task.userId === user.id;
+      if (!canAccessTask) {
+        throw new UnauthorizedException('You cannot update this task');
+      }
       await this.tasksRepository.remove(task);
     } catch (error) {
       this.logError(error, `remove(${id})`);
@@ -222,24 +287,24 @@ export class TasksService {
     try {
       const task = await this.validateTaskExists(id);
       task.status = status;
-      
+
       const updatedTask = await this.tasksRepository.save(task);
       await this.handleTaskQueue(updatedTask.id, updatedTask.status);
-      
+
       return updatedTask;
     } catch (error) {
       this.logError(error, `updateStatus(${id})`);
-      
-      if (error instanceof NotFoundException || 
-          error instanceof InternalServerErrorException) throw error;
-      
+
+      if (error instanceof NotFoundException || error instanceof InternalServerErrorException)
+        throw error;
+
       throw new InternalServerErrorException(ERROR_MESSAGES.TASKS.UPDATE_FAILED);
     }
   }
 
-  async getStats(): Promise<TaskStatsDto> {
+  async getStats(userId?: string): Promise<TaskStatsDto> {
     try {
-      const query = await this.tasksRepository
+      const queryBuilder = this.tasksRepository
         .createQueryBuilder('task')
         .select([
           'COUNT(*) as total',
@@ -253,8 +318,14 @@ export class TasksService {
           inProgress: TaskStatus.IN_PROGRESS,
           pending: TaskStatus.PENDING,
           high: TaskPriority.HIGH,
-        })
-        .getRawOne();
+        });
+
+      // Add user filter if userId is provided (for non-admin users)
+      if (userId) {
+        queryBuilder.where('task.userId = :userId', { userId });
+      }
+
+      const query = await queryBuilder.getRawOne();
 
       return {
         total: parseInt(query.total),
@@ -269,7 +340,11 @@ export class TasksService {
     }
   }
 
-  async batchProcess(taskIds: string[], action: string): Promise<BatchProcessResultDto[]> {
+  async batchProcess(
+    taskIds: string[],
+    action: string,
+    user: any,
+  ): Promise<BatchProcessResultDto[]> {
     try {
       if (!Array.isArray(taskIds)) {
         throw new BadRequestException(ERROR_MESSAGES.TASKS.INVALID_BATCH_INPUT);
@@ -280,12 +355,18 @@ export class TasksService {
       }
 
       const results: BatchProcessResultDto[] = [];
+      for (const taskId of taskIds) {
+        const task = await this.validateTaskExists(taskId);
+
+        if (!task) throw new NotFoundException(ERROR_MESSAGES.TASKS.NOT_FOUND);
+        const canAccessTask = user.role === 'admin' || task.userId === user.id;
+        if (!canAccessTask) {
+          throw new UnauthorizedException('You cannot perform this action on this task');
+        }
+      }
 
       if (action === 'complete') {
-        await this.tasksRepository.update(
-          { id: In(taskIds) },
-          { status: TaskStatus.COMPLETED }
-        );
+        await this.tasksRepository.update({ id: In(taskIds) }, { status: TaskStatus.COMPLETED });
 
         for (const taskId of taskIds) {
           try {
@@ -297,7 +378,9 @@ export class TasksService {
         }
       } else if (action === 'delete') {
         await this.tasksRepository.delete({ id: In(taskIds) });
-        taskIds.forEach(taskId => results.push({ taskId, success: true, result: { message: 'Task deleted' } }));
+        taskIds.forEach(taskId =>
+          results.push({ taskId, success: true, result: { message: 'Task deleted' } }),
+        );
       } else {
         throw new BadRequestException(ERROR_MESSAGES.TASKS.INVALID_ACTION(action));
       }
@@ -305,9 +388,9 @@ export class TasksService {
       return results;
     } catch (error) {
       this.logError(error, `batchProcess(${action})`);
-      
+
       if (error instanceof BadRequestException) throw error;
-      
+
       return taskIds.map(taskId => ({
         taskId,
         success: false,
