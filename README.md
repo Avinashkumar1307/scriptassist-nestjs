@@ -159,6 +159,7 @@ This codebase contains a partially implemented task management API that suffers 
 - API Documentation with Swagger/OpenAPI
 
 ## Key Technical Decisions
+
 ### Authentication System
 
 - Implemented a robust JWT authentication system with:
@@ -180,7 +181,7 @@ This codebase contains a partially implemented task management API that suffers 
 
 - Redis caching layer for:
 - User sessions
--Frequently accessed tasks
+  -Frequently accessed tasks
 - Pagination results
 - Database query optimization:
 - Proper joins and relations
@@ -231,6 +232,14 @@ The API should expose the following endpoints:
 
 - `POST /auth/login` - Authenticate a user
 - `POST /auth/register` - Register a new user
+
+### Users
+
+- `POST /users` - Create a new user
+- `GET /user` - Get all the users
+- `POST /users/:id` - Get user details
+- `PATCH /users/:id` - Update a user details
+- `DELETE /users/:id` - Delete a user
 
 ### Tasks
 
