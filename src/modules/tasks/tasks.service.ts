@@ -54,9 +54,22 @@ export class TasksService {
   }
 
   private async validateTaskExists(id: string): Promise<Task> {
+    console.log(`Validating task existence for ID: ${id}`);
     const task = await this.tasksRepository.findOne({
       where: { id },
       relations: ['user'],
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        status: true,
+        priority: true,
+        dueDate: true,
+        userId: true,
+        createdAt: true,
+        updatedAt: true,
+        user: { id: true, email: true, name: true },
+      },
     });
 
     if (!task) {
@@ -206,6 +219,7 @@ export class TasksService {
 
   async findOne(id: string, user: any): Promise<Task> {
     try {
+      console.log(`Fetching task with ID: ${id}`);
       const task = await this.validateTaskExists(id);
       if (!task) throw new NotFoundException(ERROR_MESSAGES.TASKS.NOT_FOUND);
 
@@ -217,11 +231,13 @@ export class TasksService {
     } catch (error) {
       this.logError(error, `findOne(${id})`);
       if (error instanceof NotFoundException) throw error;
-      throw new InternalServerErrorException(ERROR_MESSAGES.TASKS.FETCH_FAILED);
+      throw new BadRequestException(ERROR_MESSAGES.TASKS.FETCH_FAILED);
     }
   }
 
   async update(id: string, updateTaskDto: UpdateTaskDto, user: any): Promise<Task> {
+    console.log(`Updating task with ID: ${id}`);
+    console.log(id);
     try {
       return await this.tasksRepository.manager.transaction(async transactionalEntityManager => {
         const task = await this.validateTaskExists(id);
@@ -251,7 +267,7 @@ export class TasksService {
         throw new ConflictException(ERROR_MESSAGES.TASKS.CONFLICT);
       }
 
-      throw new InternalServerErrorException(ERROR_MESSAGES.TASKS.UPDATE_FAILED);
+      throw new InternalServerErrorException('You can update own tasks only');
     }
   }
 
@@ -276,6 +292,18 @@ export class TasksService {
       return await this.tasksRepository.find({
         where: { status },
         relations: ['user'],
+        select: {
+        id: true,
+        title: true,
+        description: true,
+        status: true,
+        priority: true,
+        dueDate: true,
+        userId: true,
+        createdAt: true,
+        updatedAt: true,
+        user: { id: true, email: true, name: true },
+      },
       });
     } catch (error) {
       this.logError(error, `findByStatus(${status})`);

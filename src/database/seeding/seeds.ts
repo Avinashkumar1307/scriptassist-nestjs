@@ -27,22 +27,38 @@ async function main() {
     await AppDataSource.initialize();
     console.log('Database connection initialized');
 
-    // Clear existing data
-    await AppDataSource.getRepository(Task).delete({});
-    await AppDataSource.getRepository(User).delete({});
+    // Option 1: Using query builder to delete all records
+    console.log('Clearing existing data...');
+    await AppDataSource.createQueryBuilder()
+      .delete()
+      .from(Task)
+      .where('id IS NOT NULL')
+      .execute();
+
+    await AppDataSource.createQueryBuilder()
+      .delete()
+      .from(User)
+      .where('id IS NOT NULL')
+      .execute();
+
+    // Option 2: Alternative using raw query with CASCADE
+    // await AppDataSource.query('TRUNCATE TABLE users, tasks CASCADE');
+
     console.log('Existing data cleared');
 
-    // Seed users
-    await AppDataSource.getRepository(User).save(users);
-    console.log('Users seeded successfully');
+    // Seed users first since tasks reference users
+    console.log('Seeding users...');
+    const createdUsers = await AppDataSource.getRepository(User).save(users);
+    console.log(`${createdUsers.length} users seeded successfully`);
 
     // Seed tasks
-    await AppDataSource.getRepository(Task).save(tasks);
-    console.log('Tasks seeded successfully');
+    console.log('Seeding tasks...');
+    const createdTasks = await AppDataSource.getRepository(Task).save(tasks);
+    console.log(`${createdTasks.length} tasks seeded successfully`);
 
-    console.log('Database seeding completed');
+    console.log('✅ Database seeding completed');
   } catch (error) {
-    console.error('Error during database seeding:', error);
+    console.error('❌ Error during database seeding:', error);
   } finally {
     // Close connection
     await AppDataSource.destroy();
@@ -51,4 +67,4 @@ async function main() {
 }
 
 // Run the seeding
-main(); 
+main();
